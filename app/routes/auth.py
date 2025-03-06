@@ -130,9 +130,9 @@ def upload_avatar():
     ImageName = str(user.id) + '.' + file.filename.split('.')[-1]
     ImagePath = os.path.join('static','image','avatar',ImageName)
     save_image(file, AVATAR_PATH, ImageName)
-    user.avatar_uel = ImagePath
+    user.avatar_url = ImagePath
     db.session.commit()
-    return jsonify({'message': '上传成功', 'avatar_url': user.avatar_uel}), 200
+    return jsonify({'message': '上传成功', 'avatar_url': user.avatar_url}), 200
 
 @auth_bp.route('/me',methods=['GET'])
 def get_me_info():
@@ -140,7 +140,7 @@ def get_me_info():
     if not user:
         return jsonify({'message': '未登录或登录已过期'}), 401
 
-    return jsonify({'user_id': user.id, 'user_name': user.name,'bio': user.bio,'avatar_url': user.avatar_uel}) , 200
+    return jsonify({'user_id': user.id, 'user_name': user.name,'bio': user.bio,'avatar_url': user.avatar_url}) , 200
 
 @auth_bp.route('/change_me_info',methods=['POST'])
 def change_me_info():

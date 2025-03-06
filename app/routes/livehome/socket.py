@@ -1,33 +1,60 @@
 from flask_socketio import join_room, leave_room
 from flask import request
-from app.models.user import WatchHistory
+from app.models.user import WatchHistory, Live
 from app.db.database import db
 import datetime
-# 存储在线用户信息
+from app.routes.watchHistory import create_watchHistory, leave_watchHistory
+
+# Store online users information
 online_users = {}
+
 
 def init_socket(socketio):
     @socketio.on('connect')
     def handle_connect():
-        user_id = request.args.get('userId')
-        room_id = request.args.get('roomId')
-        if user_id and room_id:
-            online_users[request.sid] = {'userId': user_id, 'roomId': room_id}
-            join_room(room_id)
-            print(f"用户 {user_id} 加入了直播间 {room_id}")
-            #记录用户进入直播间的历史记录到数据库，代表用户的观看历史
-            watch_history = WatchHistory(user_id=user_id, live_id=room_id, watched_at=datetime.datetime.now())
-            db.session.add(watch_history)
-            db.session.commit()
-        else:
-            print("连接失败：缺少 userId 或 roomId")
+        try:
+            user_id = request.args.get('userId')
+            room_id = request.args.get('roomId')
+
+            if user_id and room_id:
+                # Store connection information
+                online_users[request.sid] = {'userId': user_id, 'roomId': room_id}
+                join_room(room_id)
+                print(f"用户 {user_id} 连接 直播间 {room_id}")
+
+                # Check if live stream exists and is active
+                live = Live.query.filter_by(id=room_id).first()
+                print(f"直播间{live.id}被找到咯，状态是 {live.status}")
+                if live and live.status == 'live':
+                    # Create watch history record
+                    history_id = create_watchHistory(user_id, room_id)
+                    print(f"创建观看历史：ID {history_id} 用户 {user_id} 观看直播间 {room_id}")
+                else:
+                    print(f"直播间 {room_id} 没找到或者停止直播")
+            else:
+                print("连接失败：用户 ID 或直播间 ID 为空")
+        except Exception as e:
+            print(f"处理连接时发生错误: {str(e)}")
 
     @socketio.on('disconnect')
     def handle_disconnect():
-        user_info = online_users.pop(request.sid, None)
-        if user_info:
-            print(f"用户 {user_info['userId']} 离开了直播间 {user_info['roomId']}")
-            leave_room(user_info['roomId'])
+        try:
+            user_info = online_users.pop(request.sid, None)
+            if user_info:
+                user_id = user_info['userId']
+                room_id = user_info['roomId']
+
+                print(f"用户 {user_id} 离开 直播间 {room_id}")
+                leave_room(room_id)
+
+                # Update watch history with duration
+                try:
+                    leave_watchHistory(user_id, room_id)
+                    print(f"更新观看历史：用户 {user_id} 离开 {room_id}")
+                except Exception as e:
+                    print(f"更新观看历史失败: {str(e)}")
+        except Exception as e:
+            print(f"处理断开连接时发生错误: {str(e)}")
 
     @socketio.on('send_danmu')
     def handle_send_danmu(data):

@@ -88,36 +88,71 @@ def give_gift():
     try:
         # 获取余额
         old_balance = get_latest_balance(user_id)
-        liver_balance = get_latest_balance(liver_id)
 
-        user_new_balance = old_balance - amount
-        liver_new_balance = liver_balance + amount / 2
+        # 如果是自己给自己送礼物
+        if user_id == liver_id:
+            # 计算最终余额（先加后减，确保扣款记录是最新的）
+            intermediate_balance = old_balance + amount / 2
+            final_balance = intermediate_balance - amount
 
-        if user_new_balance < 0:
-            return jsonify({'status': 'error', 'message': '余额不足'}), 400
+            # 创建收款交易记录（较早的时间戳）
+            liver_transaction = Transaction(
+                user_id=liver_id,
+                transaction_type='收到礼物',
+                amount=amount / 2,
+                reference_id=str(uuid.uuid4()),
+                description=description,
+                balance_after=intermediate_balance,
+                created_at=datetime.datetime.now()
+            )
+            db.session.add(liver_transaction)
 
-        # 创建交易记录
-        user_transaction = Transaction(
-            user_id=user_id,
-            transaction_type='送礼物',
-            amount=amount,
-            reference_id=str(uuid.uuid4()),
-            description=description,
-            balance_after=user_new_balance,
-            created_at=datetime.datetime.now()
-        )
-        db.session.add(user_transaction)
+            # 创建扣款交易记录（较晚的时间戳，确保这是最新记录）
+            user_transaction = Transaction(
+                user_id=user_id,
+                transaction_type='送礼物',
+                amount=amount,
+                reference_id=str(uuid.uuid4()),
+                description=description,
+                balance_after=final_balance,
+                created_at=datetime.datetime.now() + datetime.timedelta(microseconds=1)
+            )
+            db.session.add(user_transaction)
 
-        liver_transaction = Transaction(
-            user_id=liver_id,
-            transaction_type='收到礼物',
-            amount=amount / 2,
-            reference_id=str(uuid.uuid4()),
-            description=description,
-            balance_after=liver_new_balance,
-            created_at=datetime.datetime.now()
-        )
-        db.session.add(liver_transaction)
+            if final_balance < 0:
+                return jsonify({'status': 'error', 'message': '余额不足'}), 400
+        else:
+            # 正常的不同用户之间的送礼逻辑
+            liver_balance = get_latest_balance(liver_id)
+
+            user_new_balance = old_balance - amount
+            liver_new_balance = liver_balance + amount / 2
+
+            if user_new_balance < 0:
+                return jsonify({'status': 'error', 'message': '余额不足'}), 400
+
+            # 创建交易记录
+            user_transaction = Transaction(
+                user_id=user_id,
+                transaction_type='送礼物',
+                amount=amount,
+                reference_id=str(uuid.uuid4()),
+                description=description,
+                balance_after=user_new_balance,
+                created_at=datetime.datetime.now()
+            )
+            db.session.add(user_transaction)
+
+            liver_transaction = Transaction(
+                user_id=liver_id,
+                transaction_type='收到礼物',
+                amount=amount / 2,
+                reference_id=str(uuid.uuid4()),
+                description=description,
+                balance_after=liver_new_balance,
+                created_at=datetime.datetime.now()
+            )
+            db.session.add(liver_transaction)
 
         # 提交事务
         db.session.commit()
