@@ -4,13 +4,11 @@ from app.models.user import WatchHistory,Live,User
 from app.db.database import db
 import uuid
 from datetime import datetime
+from sqlalchemy.exc import IntegrityError
 
 watchHistory_bp = Blueprint('watchHistory_bp',__name__)
 
-def update_watchHistory(user_id,live_id):
-    watchHistory = WatchHistory.query.filter_by(user_id=user_id,live_id=live_id).first()
-    watchHistory.watched_at = db.func.now()
-    db.session.commit()
+
 
 def leave_watchHistory(user_id,live_id):
     watchHistory = WatchHistory.query.filter_by(user_id=user_id,live_id=live_id).first()
@@ -18,23 +16,35 @@ def leave_watchHistory(user_id,live_id):
     watchHistory.watch_duration = (datetime.now() - watchHistory.watched_at).total_seconds()
     db.session.commit()
 
-
+def update_watchHistory(user_id, live_id):
+    watchHistory = WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first()
+    if watchHistory:  # 确保记录存在
+        watchHistory.watched_at = db.func.now()
+        db.session.commit()
+    else:
+        raise ValueError("观看记录不存在")
 def create_watchHistory(user_id, live_id):
-    # Check if history exists
-    existing_history = WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first()
+    try:
+        # Check if history exists
+        existing_history = WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first()
 
-    # If exists and live is active, update it and return its ID
-    if existing_history:
-        if Live.query.filter_by(id=live_id).first().status == 'Live':
-            update_watchHistory(user_id, live_id)
-            return existing_history.id
+        # If exists and live is active, update it and return its ID
+        if existing_history:
+            if Live.query.filter_by(id=live_id).first().status == 'Live':
+                update_watchHistory(user_id, live_id)
+                return existing_history.id  # 直接返回，避免继续执行
 
-    # Otherwise create new entry
-    id = str(uuid.uuid4())
-    watchHistory = WatchHistory(id=id, user_id=user_id, live_id=live_id, watched_at=db.func.now())
-    db.session.add(watchHistory)
-    db.session.commit()
-    return id
+        # Otherwise create new entry
+        id = str(uuid.uuid4())
+        watchHistory = WatchHistory(id=id, user_id=user_id, live_id=live_id, watched_at=db.func.now())
+        db.session.add(watchHistory)
+        db.session.commit()
+        return id
+    except IntegrityError:  # 捕获唯一约束冲突
+        db.session.rollback()
+        # 如果发生冲突，说明记录已存在，直接更新
+        update_watchHistory(user_id, live_id)
+        return WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first().id
 
 
 #根据user_id找到对应的user，返回user的name

@@ -25,7 +25,7 @@ class User(db.Model):
 
 # 创建关注关系表
 class Follow(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True)
     follower_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     followed_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.now())
@@ -122,6 +122,10 @@ class WatchHistory(db.Model):
     __table_args__ = (
         db.Index('idx_watch_history_user_id', 'user_id'),
         db.Index('idx_watch_history_live_id', 'live_id'),
+    )
+    #确保记录的唯一性列，保证live_id和user_id的联合唯一性
+    __table_args__ = (
+        db.UniqueConstraint('user_id', 'live_id', name='unique_user_live'),
     )
     def to_dict(self):
         return{

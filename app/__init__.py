@@ -9,6 +9,7 @@ from app.routes.transaction import transaction_bp
 from app.routes.livehome import init_livehome
 from flask_socketio import SocketIO
 from app.routes.watchHistory import watchHistory_bp
+from app.routes.follow import follow_bp
 
 socketio = None
 def create_app():
@@ -27,6 +28,7 @@ def create_app():
     app.register_blueprint(transaction_bp, url_prefix='/api/transaction')
     # app.register_blueprint(livehome_bp, url_prefix='/api/livehome')
     app.register_blueprint(watchHistory_bp, url_prefix='/api/watchHistory')
+    app.register_blueprint(follow_bp, url_prefix='/api/follow')
 
     # 创建数据库表
     with app.app_context():
