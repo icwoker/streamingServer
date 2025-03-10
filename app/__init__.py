@@ -10,6 +10,8 @@ from app.routes.livehome import init_livehome
 from flask_socketio import SocketIO
 from app.routes.watchHistory import watchHistory_bp
 from app.routes.follow import follow_bp
+from app.routes.liveModerator import liveModerator_bp
+from app.routes.liveBanned import liveBanned_bp
 
 socketio = None
 def create_app():
@@ -29,6 +31,8 @@ def create_app():
     # app.register_blueprint(livehome_bp, url_prefix='/api/livehome')
     app.register_blueprint(watchHistory_bp, url_prefix='/api/watchHistory')
     app.register_blueprint(follow_bp, url_prefix='/api/follow')
+    app.register_blueprint(liveModerator_bp, url_prefix='/api/liveModerator')
+    app.register_blueprint(liveBanned_bp, url_prefix='/api/liveBanned')
 
     # 创建数据库表
     with app.app_context():

@@ -147,13 +147,21 @@ class Gift(db.Model):
 #礼物赠送表
 class GiftRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 赠送者
-    receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 接收者
-    live_id = db.Column(db.String(255), db.ForeignKey('live.id'), nullable=False)  # 直播ID
-    gift_id = db.Column(db.Integer, db.ForeignKey('gift.id'), nullable=False)  # 礼物ID
-    quantity = db.Column(db.Integer, default=1)  # 礼物数量
-    total_price = db.Column(db.Float, nullable=False)  # 总价值
+    sender_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    receiver_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    live_id = db.Column(db.String(255), db.ForeignKey('live.id'), nullable=False)
+    gift_id = db.Column(db.Integer, db.ForeignKey('gift.id'), nullable=False)
+    quantity = db.Column(db.Integer, default=1)
+    total_price = db.Column(db.Float, nullable=False)
     created_at = db.Column(db.DateTime, default=db.func.now())
+
+    # 定义关系
+    sender = db.relationship('User', foreign_keys=[sender_id], backref='sent_gifts')
+    receiver = db.relationship('User', foreign_keys=[receiver_id], backref='received_gifts')
+    live = db.relationship('Live', backref='gift_records')
+    gift = db.relationship('Gift', backref='gift_records')
+
+
 
 #钱包表
 class Wallet(db.Model):
@@ -164,6 +172,8 @@ class Wallet(db.Model):
     total_expense = db.Column(db.Float, default=0.0)  # 总支出
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
 
+    #定义关系
+    user = db.relationship('User', backref=db.backref('wallet', lazy=True))
 
 #创建虚拟礼物表
 class Transaction(db.Model):
@@ -242,7 +252,7 @@ class LiveBannedUser(db.Model):
 
 
 class LiveModerator(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
+    id = db.Column(db.String(255), primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 管理员ID
     appointed_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # 谁任命的
     created_at = db.Column(db.DateTime, default=db.func.now())

@@ -4,7 +4,8 @@ from app.routes.auth import get_user_from_token
 from app.db.database import db
 import uuid
 import datetime
-
+from app.routes.liveModerator import check_moderator
+from app.routes.liveBanned import check_live_banned_user
 follow_bp = Blueprint('follow_bp', __name__)
 
 #关注
@@ -43,8 +44,8 @@ def unfollow(follower_id,followed_id):
 
 
 def get_my_fans(user_id, page=1, per_page=20):
-    # 使用联合查询提高效率
     try:
+        # 查询粉丝列表，并判断是否互粉
         fans_pagination = db.session.query(Follow, User). \
             join(User, Follow.follower_id == User.id). \
             filter(Follow.followed_id == user_id). \
@@ -52,12 +53,19 @@ def get_my_fans(user_id, page=1, per_page=20):
 
         fans_list = []
         for follow, user in fans_pagination.items:
+            # 判断当前用户是否已关注该粉丝
+            is_following = Follow.query.filter_by(follower_id=user_id, followed_id=user.id).first() is not None
+            is_live_moderator = check_moderator(user.id,user_id)
+            is_live_banned = check_live_banned_user(user.id,user_id)
             fans_list.append({
                 'id': user.id,
                 'name': user.name,
                 'avatar_url': user.avatar_url,
                 'bio': user.bio,
-                'follow_time': follow.created_at.strftime('%Y-%m-%d %H:%M:%S')
+                'follow_time': follow.created_at.strftime('%Y-%m-%d %H:%M:%S'),
+                'is_following': is_following , # 是否已关注该粉丝
+                'is_live_moderator': is_live_moderator[0], # 是否是房管
+                'is_live_banned': is_live_banned # 是否是禁言用户
             })
 
         return jsonify({
@@ -66,7 +74,7 @@ def get_my_fans(user_id, page=1, per_page=20):
             'total': fans_pagination.total,
             'pages': fans_pagination.pages,
             'current_page': page
-        }) , 200
+        }), 200
     except Exception as e:
         return jsonify({'message': f'获取粉丝失败: {str(e)}'}), 500
 

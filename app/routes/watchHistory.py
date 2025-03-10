@@ -12,8 +12,10 @@ watchHistory_bp = Blueprint('watchHistory_bp',__name__)
 
 def leave_watchHistory(user_id,live_id):
     watchHistory = WatchHistory.query.filter_by(user_id=user_id,live_id=live_id).first()
-    #获取现在的时间 减去 观看最新观看时间得到秒数
-    watchHistory.watch_duration = (datetime.now() - watchHistory.watched_at).total_seconds()
+    #获取现在的时间 减去 观看最新观看时间得到秒数，加上原来的观看时长
+    old_duration = watchHistory.watch_duration
+    new_duration = (datetime.now() - watchHistory.watched_at).total_seconds() + old_duration
+    watchHistory.watch_duration = new_duration
     db.session.commit()
 
 def update_watchHistory(user_id, live_id):
@@ -24,26 +26,31 @@ def update_watchHistory(user_id, live_id):
     else:
         raise ValueError("观看记录不存在")
 def create_watchHistory(user_id, live_id):
+    # Check if live is active
     try:
         # Check if history exists
         existing_history = WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first()
-
+        print('可以获取到存在的数据')
         # If exists and live is active, update it and return its ID
         if existing_history:
-            if Live.query.filter_by(id=live_id).first().status == 'Live':
+
+            if Live.query.filter_by(id=live_id).first().status == 'live':
+                print(f'我已经看过{live_id}了，决定更新观看记录')
                 update_watchHistory(user_id, live_id)
                 return existing_history.id  # 直接返回，避免继续执行
-
-        # Otherwise create new entry
-        id = str(uuid.uuid4())
-        watchHistory = WatchHistory(id=id, user_id=user_id, live_id=live_id, watched_at=db.func.now())
-        db.session.add(watchHistory)
-        db.session.commit()
-        return id
+        else:
+            # Otherwise create new entry
+            id = str(uuid.uuid4())
+            watchHistory = WatchHistory(id=id, user_id=user_id, live_id=live_id, watched_at=db.func.now())
+            db.session.add(watchHistory)
+            print(f'即使现在我看过了，我依旧要创建新的记录')
+            db.session.commit()
+            return id
     except IntegrityError:  # 捕获唯一约束冲突
         db.session.rollback()
         # 如果发生冲突，说明记录已存在，直接更新
         update_watchHistory(user_id, live_id)
+        print(f'我已经看过{live_id}了，决定更新观看记录')
         return WatchHistory.query.filter_by(user_id=user_id, live_id=live_id).first().id
 
 
