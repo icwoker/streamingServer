@@ -10,7 +10,7 @@ livehome_bp = Blueprint('livehome', __name__)
 from app.env import BASE_DIR
 from flask_socketio import SocketIO
 from app.models.user import Live,WatchHistory,Tag,LiveTag
-
+from app.routes.ChatMessage import delete_chat_message
 
 socketio = SocketIO()
 
@@ -145,6 +145,7 @@ def close_live(id):
     live.end_time = datetime.datetime.now()
     live.status = 'end'
     db.session.commit()
+    delete_chat_message(live.id)
     return jsonify({'message': '直播间关闭成功'})
 
 
@@ -203,5 +204,6 @@ def check_live():
         return jsonify({'status': 'live','stream_key':live.stream_key,'live_id':live.id})
     else:
         return jsonify({'status': 'end'})
+
 
 

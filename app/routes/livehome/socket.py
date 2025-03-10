@@ -4,6 +4,7 @@ from app.models.user import WatchHistory, Live
 from app.db.database import db
 import datetime
 from app.routes.watchHistory import create_watchHistory, leave_watchHistory
+from app.routes.ChatMessage import add_chat_message
 
 # Store online users information
 online_users = {}
@@ -63,6 +64,12 @@ def init_socket(socketio):
             room_id = user_info['roomId']
             sender_id = user_info['userId']
             message = data.get('message', '')
+            if isinstance(message, dict) and 'content' in message:
+                message_content = message['content']
+            else:
+                message_content = str(message)  # Ensure it's a string
+
+            add_chat_message(room_id, sender_id, message_content)
             if message:
                 print(f"收到弹幕：{message} 来自用户 {sender_id}")
                 socketio.emit('receive_danmu', {
