@@ -1,7 +1,6 @@
 from flask import Blueprint,request,jsonify,current_app,make_response
 from app.routes.auth import get_user_from_token
 import os
-
 from app.methods.image.main import save_image
 import datetime
 from app.db.database import db
@@ -11,6 +10,9 @@ from app.env import BASE_DIR
 from flask_socketio import SocketIO
 from app.models.user import Live,WatchHistory,Tag,LiveTag
 from app.routes.ChatMessage import delete_chat_message
+from app.routes.LiveStatistics import create_LiveStatistics , update_total_duration
+from app.routes.liveBanned import get_banned_me_list
+
 
 socketio = SocketIO()
 
@@ -83,6 +85,8 @@ def create_room():
 
     db.session.commit()
 
+    create_LiveStatistics(live.id)
+
     return jsonify({
         'message': '直播间创建成功',
         'stream_key': stream_key,
@@ -146,17 +150,26 @@ def close_live(id):
     live.status = 'end'
     db.session.commit()
     delete_chat_message(live.id)
+    update_total_duration(live.id)
     return jsonify({'message': '直播间关闭成功'})
 
 
 @livehome_bp.route('/get_live_list',methods=['GET'])
 def get_live_list():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    banned_me_list = get_banned_me_list(user.id)
     lives = Live.query.filter_by(status='live').all()
     data = []
     for live in lives:
+        if live.user.id in banned_me_list:
+            continue
         user_name = live.user.name  # 使用 `name` 字段
         user_avatar = live.user.avatar_url  # 使用 `avatar_url` 字段
         # 假设每个直播只有一个标签，获取第一个标签
+        #检查主播是否拉黑了请求者，如果拉黑了，则不显示直播间
+
         tag = live.tags[0] if live.tags else None
         tag_name = tag.name if tag else None
         data.append({'id': live.id, 'title': live.title, 'tags': tag_name, 'thumbnail': live.cover_url,

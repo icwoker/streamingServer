@@ -5,7 +5,7 @@ from app.db.database import db
 import datetime
 from app.routes.watchHistory import create_watchHistory, leave_watchHistory
 from app.routes.ChatMessage import add_chat_message
-
+from app.routes.LiveStatistics import update_peak_viewers,update_total_messages
 # Store online users information
 online_users = {}
 
@@ -25,11 +25,20 @@ def init_socket(socketio):
 
                 # Check if live stream exists and is active
                 live = Live.query.filter_by(id=room_id).first()
-                print(f"直播间{live.id}被找到咯，状态是 {live.status}")
+                # print(f"直播间{live.id}被找到咯，状态是 {live.status}")
                 if live and live.status == 'live':
                     # Create watch history record
                     history_id = create_watchHistory(user_id, room_id)
                     print(f"创建观看历史：ID {history_id} 用户 {user_id} 观看直播间 {room_id}")
+                    #尝试更新直播间的最大观看人数
+                    #人数
+                    num_viewers = 0
+                    for i in online_users.values():
+                        if i['roomId'] == room_id:
+                            num_viewers += 1
+                    live.num_viewers = num_viewers
+                    update_peak_viewers(room_id,num_viewers)
+                    #尝试更新直播间的总消息数
                 else:
                     print(f"直播间 {room_id} 没找到或者停止直播")
             else:
@@ -72,6 +81,8 @@ def init_socket(socketio):
             add_chat_message(room_id, sender_id, message_content)
             if message:
                 print(f"收到弹幕：{message} 来自用户 {sender_id}")
+                #更新直播间的弹幕总数
+                update_total_messages(room_id)
                 socketio.emit('receive_danmu', {
                     'senderId': sender_id,
                     'message': message,

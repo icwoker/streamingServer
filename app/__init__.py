@@ -13,6 +13,7 @@ from app.routes.follow import follow_bp
 from app.routes.liveModerator import liveModerator_bp
 from app.routes.liveBanned import liveBanned_bp
 from app.routes.ChatMessage import ChatMessage_bp
+from app.routes.LiveStatistics import LiveStatistics_bp
 
 socketio = None
 def create_app():
@@ -35,6 +36,7 @@ def create_app():
     app.register_blueprint(liveModerator_bp, url_prefix='/api/liveModerator')
     app.register_blueprint(liveBanned_bp, url_prefix='/api/liveBanned')
     app.register_blueprint(ChatMessage_bp, url_prefix='/api/ChatMessage')
+    app.register_blueprint(LiveStatistics_bp, url_prefix='/api/LiveStatistics')
 
     # 创建数据库表
     with app.app_context():

@@ -93,6 +93,18 @@ def get_live_banned_list(banned_by, page, per_page):
         return jsonify({'message': f'获取小黑屋用户失败: {str(e)}'}), 500
 
 
+#找出所有拉黑我的主播对。
+def get_banned_me_list(user_id):
+    try:
+        banned_me_list =[ ]
+        live_banned_users = LiveBannedUser.query.filter_by(user_id=user_id).all()
+        for live_banned_user in live_banned_users:
+            banned_me_list.append(live_banned_user.banned_by)
+        return banned_me_list
+    except Exception as e:
+        print(e)
+        return []
+
 @liveBanned_bp.route('/create', methods=['POST'])
 def create_live_banned_user_api():
     user = get_user_from_token()

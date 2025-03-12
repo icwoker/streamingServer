@@ -271,3 +271,6 @@ class LiveStatistics(db.Model):
     total_gifts = db.Column(db.Float, default=0.0)  # 总礼物价值
     total_messages = db.Column(db.Integer, default=0)  # 总消息数
     updated_at = db.Column(db.DateTime, default=db.func.now(), onupdate=db.func.now())
+
+    #定义关系
+    live = db.relationship('Live', backref=db.backref('statistics', lazy=True))
