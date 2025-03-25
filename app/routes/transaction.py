@@ -225,3 +225,51 @@ def get_user_transactions():
         'page_size': transactions.per_page
     }
     return jsonify(data), 200
+
+
+#获取本场直播的大哥""
+# Get gift ranking for the current live stream
+def get_gift_records(live_id):
+    # Get all gift records for this live stream
+    gift_records = GiftRecord.query.filter_by(live_id=live_id).order_by(GiftRecord.created_at.desc()).all()
+
+    # Sum up total spending for each sender
+    gift_records_dict = {}
+    for gift_record in gift_records:
+        if gift_record.sender_id not in gift_records_dict:
+            gift_records_dict[gift_record.sender_id] = gift_record.total_price
+        else:
+            gift_records_dict[gift_record.sender_id] += gift_record.total_price
+
+    # Sort senders by total amount spent, in descending order
+    sorted_gift_records = sorted(gift_records_dict.items(), key=lambda x: x[1], reverse=True)
+
+    # Get user details for all senders
+    user_ids = [user_id for user_id, amount in sorted_gift_records]
+    users = User.query.filter(User.id.in_(user_ids)).all()
+
+    # Map user IDs to their details
+    user_dict = {user.id: {'username': user.name, 'avatar': user.avatar_url} for user in users}
+
+    # Format result for frontend
+    result = [
+        {
+            'username': user_dict[user_id]['username'],
+            'avatar': user_dict[user_id]['avatar'],
+            'amount': amount
+        }
+        for user_id, amount in sorted_gift_records
+    ]
+
+    return result
+
+@transaction_bp.route('/gift_ranking', methods=['GET'])
+def get_gift_ranking():
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    live_id = request.args.get('live_id')
+    if not live_id:
+        return jsonify({'message': '直播ID不能为空'}), 400
+    result = get_gift_records(live_id)
+    return jsonify({'data': result}), 200

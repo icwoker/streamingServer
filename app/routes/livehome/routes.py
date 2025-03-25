@@ -1,4 +1,4 @@
-from flask import Blueprint,request,jsonify,current_app,make_response
+from flask import Blueprint,request,jsonify,current_app,make_response,Response
 from app.routes.auth import get_user_from_token
 import os
 from app.methods.image.main import save_image
@@ -8,10 +8,16 @@ import uuid
 livehome_bp = Blueprint('livehome', __name__)
 from app.env import BASE_DIR
 from flask_socketio import SocketIO
-from app.models.user import Live,WatchHistory,Tag,LiveTag
+from app.models.user import Live,WatchHistory,Tag,LiveTag,Follow,NotificationType
 from app.routes.ChatMessage import delete_chat_message
 from app.routes.LiveStatistics import create_LiveStatistics , update_total_duration
 from app.routes.liveBanned import get_banned_me_list
+from app.routes.Notification import batch_write_notifications, get_unread_notifications
+from app.methods.recommend import recommend_lives
+import json
+import queue
+import threading
+import time
 
 
 socketio = SocketIO()
@@ -21,6 +27,15 @@ LIVE_IMAGE_DIR = os.path.join(BASE_DIR,'static','image','live')
 def init_livehome(app):
     socketio.init_app(app, cors_allowed_origins="*")
 
+
+def check_user_is_live(user_id):
+    if user_id is None:
+        return False , None
+    live = db.session.query(Live).filter_by(user_id=user_id, status='live').first()
+    if live:
+        live_id = live.id
+        return True , live_id
+    return False , None
 
 @livehome_bp.route('/create_room', methods=['POST'])
 def create_room():
@@ -84,8 +99,26 @@ def create_room():
     # live.tags.append(tag)
 
     db.session.commit()
-
+    #创建直播统计信息
     create_LiveStatistics(live.id)
+
+    #发送通知给关注该主播的用户
+    fans = Follow.query.filter_by(followed_id=user_id).all()
+    fan_ids = [fan.follower_id for fan in fans]
+    #获取主播的名字，和直播间id,返回给前端
+    liver_name = user.name
+    # live_notification = {
+    #     'type':'直播通知',
+    #     'live_id':id,
+    #     'liver_id':user.id,
+    #     'liver_name': liver_name,
+    #     'title':title,
+    #     'cover_url':ImagePath,
+    #     'timestamp':datetime.datetime.now().isoformat()
+    # }
+    #写入通知记录
+    content = f'主播：{liver_name} 开始直播啦！'
+    batch_write_notifications(user.id,content,NotificationType.LIVE_START,live.id,fan_ids)
 
     return jsonify({
         'message': '直播间创建成功',
@@ -154,27 +187,46 @@ def close_live(id):
     return jsonify({'message': '直播间关闭成功'})
 
 
-@livehome_bp.route('/get_live_list',methods=['GET'])
+@livehome_bp.route('/get_live_list', methods=['GET'])
 def get_live_list():
     user = get_user_from_token()
     if user is None:
         return jsonify({'message': '未登录或登录已过期'}), 401
+
     banned_me_list = get_banned_me_list(user.id)
     lives = Live.query.filter_by(status='live').all()
     data = []
+
+    # 遍历所有直播间，生成未排序的 data 列表
     for live in lives:
         if live.user.id in banned_me_list:
             continue
+
         user_name = live.user.name  # 使用 `name` 字段
         user_avatar = live.user.avatar_url  # 使用 `avatar_url` 字段
-        # 假设每个直播只有一个标签，获取第一个标签
-        #检查主播是否拉黑了请求者，如果拉黑了，则不显示直播间
 
+        # 假设每个直播只有一个标签，获取第一个标签
         tag = live.tags[0] if live.tags else None
         tag_name = tag.name if tag else None
-        data.append({'id': live.id, 'title': live.title, 'tags': tag_name, 'thumbnail': live.cover_url,
-                      'streamer': user_name})
-    return jsonify({'message': '直播间列表获取成功', 'data': data})
+
+        data.append({
+            'id': live.id,
+            'title': live.title,
+            'tags': tag_name,
+            'thumbnail': live.cover_url,
+            'streamer': user_name
+        })
+
+    # 获取推荐算法提供的直播排序列表
+    data_sorted = recommend_lives(user.id, lives)
+    # 将 data 转换为字典，键是直播间 ID，值是直播间信息
+    data_dict = {item['id']: item for item in data}
+    # 根据 data_sorted 的顺序，重新排列 data
+    sorted_data = []
+    for live_id in data_sorted:
+        if live_id in data_dict:
+            sorted_data.append(data_dict[live_id])
+    return jsonify({'message': '直播间列表获取成功', 'data': sorted_data})
 
 @livehome_bp.route('/livehistory',methods=['GET'])
 def getlivehistory():
@@ -219,4 +271,14 @@ def check_live():
         return jsonify({'status': 'end'})
 
 
+
+#获取未读通知
+@livehome_bp.route('/get_unread_notifications',methods=['GET'])
+def get_unread_notifications_api():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    notifications = get_unread_notifications(user.id)
+
+    return jsonify({'message': '获取成功', 'data': notifications})
 

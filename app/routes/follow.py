@@ -1,12 +1,15 @@
 from flask import Blueprint, send_file, session, jsonify, request
-from app.models.user import Follow,User
+from app.models.user import Follow,User,Live
 from app.routes.auth import get_user_from_token
 from app.db.database import db
 import uuid
 import datetime
 from app.routes.liveModerator import check_moderator
 from app.routes.liveBanned import check_live_banned_user
+from app.routes.livehome.routes import check_user_is_live
+
 follow_bp = Blueprint('follow_bp', __name__)
+
 
 #关注
 def follow(follower_id,followed_id):
@@ -89,11 +92,14 @@ def get_my_follows(user_id, page=1, per_page=20):
 
        follows_list = []
        for follow, user in follows_pagination.items:
+           is_live,live_id = check_user_is_live(user.id)
            follows_list.append({
                'id': user.id,
                'name': user.name,
                'avatar_url': user.avatar_url,
                'bio': user.bio,
+               'is_live': is_live,
+               'live_id': live_id,
                'follow_time': follow.created_at.strftime('%Y-%m-%d %H:%M:%S')
            })
 
