@@ -6,7 +6,7 @@ livehome_bp = Blueprint('livehome', __name__)
 
 def init_livehome(app, socketio):
     # 初始化 WebSocket 逻辑
-    init_socket(socketio)
+    init_socket(socketio,app)
 
     # 注册 livehome 蓝图
     from .routes import livehome_bp

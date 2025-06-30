@@ -273,3 +273,5 @@ def get_gift_ranking():
         return jsonify({'message': '直播ID不能为空'}), 400
     result = get_gift_records(live_id)
     return jsonify({'data': result}), 200
+
+

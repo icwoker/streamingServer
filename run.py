@@ -36,6 +36,7 @@ app = create_app()
 # 注意：socketio 是通过 create_app 初始化的，不能直接从全局变量导入
 from app import socketio
 
+
 if __name__ == '__main__':
     # 启动应用
     socketio.run(app, host='0.0.0.0', port=5000)

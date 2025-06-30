@@ -274,3 +274,35 @@ class LiveStatistics(db.Model):
 
     #定义关系
     live = db.relationship('Live', backref=db.backref('statistics', lazy=True))
+
+
+
+#红包表
+class RedPacket(db.Model):
+    id = db.Column(db.String(255),primary_key=True)
+    anchor_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) #主播ID
+    room_id = db.Column(db.String(255), db.ForeignKey('live.id'), nullable=False) #房间ID
+    title = db.Column(db.String(50), nullable=False) #标题
+    amount = db.Column(db.Integer, nullable=False) #金额
+    winner_num = db.Column(db.Integer, nullable=False) #获奖人数
+    expire_time = db.Column(db.DateTime, nullable=False) #开奖时间
+    status = db.Column(db.String(20), default='pending') #状态 #pending 待开奖  ongoing 进行中  finished 已结束
+
+    #定义关系
+    live = db.relationship('Live', backref=db.backref('red_packets', lazy=True))  # 一个Live对应多个RedPacket
+    user = db.relationship('User', backref=db.backref('red_packets', lazy=True))  # 一个User对应多个RedPacket
+
+
+
+#红包参与表
+class RedPacketParticipant(db.Model):
+    id = db.Column(db.BigInteger, primary_key=True, autoincrement=True)
+    redpacket_id = db.Column(db.String(255), db.ForeignKey('red_packet.id'), nullable=False) #红包ID
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False) #参与者ID
+    participate_time = db.Column(db.DateTime, nullable=False) #参与时间
+    is_winner = db.Column(db.Boolean, default=False) #是否中奖
+    award_amount = db.Column(db.Integer, default=0) #奖励金额
+
+    #定义关系
+    redpacket = db.relationship('RedPacket', backref=db.backref('redpacket_participants', lazy=True))
+    user = db.relationship('User', backref=db.backref('redpacket_participants', lazy=True))

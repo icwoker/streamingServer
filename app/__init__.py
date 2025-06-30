@@ -14,6 +14,8 @@ from app.routes.liveModerator import liveModerator_bp
 from app.routes.liveBanned import liveBanned_bp
 from app.routes.ChatMessage import ChatMessage_bp
 from app.routes.LiveStatistics import LiveStatistics_bp
+from apscheduler.schedulers.blocking import BlockingScheduler
+from flask_apscheduler import APScheduler
 
 socketio = None
 def create_app():
@@ -25,6 +27,12 @@ def create_app():
 
     # 初始化数据库
     db.init_app(app)
+
+    # 创建调度器
+    # 初始化 APScheduler
+    scheduler = APScheduler()
+    scheduler.init_app(app)
+    scheduler.start()
 
     # 注册蓝图
     app.register_blueprint(auth_bp, url_prefix='/api/auth')

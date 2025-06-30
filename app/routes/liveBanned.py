@@ -1,5 +1,5 @@
 from flask import Blueprint, send_file, session, jsonify, request
-from app.models.user import LiveBannedUser,User
+from app.models.user import LiveBannedUser,User,Live
 from app.routes.auth import get_user_from_token
 from app.db.database import db
 import uuid
@@ -9,7 +9,7 @@ import datetime
 liveBanned_bp = Blueprint('liveBanned_bp', __name__)
 
 #主播将用户送入自己的小黑屋
-def create_live_banned_user(user_id, banned_by):
+def create_live_banned_user(user_id, banned_by,room_id):
     try:
         # 检查用户是否已进入小黑屋，若已进入不允许再次进入
         exist_live_banned_user = LiveBannedUser.query.filter_by(user_id=user_id, banned_by=banned_by).first()
@@ -23,7 +23,13 @@ def create_live_banned_user(user_id, banned_by):
             return jsonify({'message': '用户不存在'}), 400
         if not exist_live:
             return jsonify({'message': '主播不存在'}), 400
-
+        #检查一下直播间属于谁，如果是主播的房管封禁，应该把banned_by改成主播的id
+        live = Live.query.filter_by(id=room_id).first()
+        #找到直播间真正的所有者
+        if live.user_id == banned_by:
+            banned_by = live.user_id
+        else:
+            banned_by = live.user_id
         # 创建小黑屋用户
         reason = '违反主播规定和直播条例'
         live_banned_user = LiveBannedUser(reason=reason, user_id=user_id, banned_by=banned_by)
@@ -112,9 +118,10 @@ def create_live_banned_user_api():
         return jsonify({'message': '用户未登录'}), 401
     banned_by = user.id
     user_id = request.json.get('user_id')
+    room_id = request.json.get('room_id')
     if not user_id:
         return jsonify({'message': '缺少必要参数'}), 400
-    return create_live_banned_user(user_id, banned_by)
+    return create_live_banned_user(user_id, banned_by,room_id)
 
 
 @liveBanned_bp.route('/delete', methods=['POST'])

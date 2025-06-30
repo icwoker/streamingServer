@@ -116,7 +116,8 @@ def recommend_lives(user_id, live_list=None):
         # 如果用户没有观看记录，则对全部非关注直播按照热度（和粉丝数）排序
         scored = []
         for live in non_followed_lives:
-            heat = live.statistics.total_viewers if live.statistics else 0
+            live_statistics = LiveStatistics.query.filter_by(live_id=live.id).first()
+            heat = live_statistics.total_viewers if live.statistics else 0
             fans = fan_counts.get(live.user_id, 0)
             scored.append((live, heat, fans))
         scored_sorted = sorted(scored,

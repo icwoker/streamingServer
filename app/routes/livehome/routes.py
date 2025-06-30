@@ -8,16 +8,15 @@ import uuid
 livehome_bp = Blueprint('livehome', __name__)
 from app.env import BASE_DIR
 from flask_socketio import SocketIO
-from app.models.user import Live,WatchHistory,Tag,LiveTag,Follow,NotificationType
+from app.models.user import (Live,WatchHistory,Tag,LiveTag,Follow,NotificationType,User,RedPacket,RedPacketParticipant
+,Transaction,Wallet)
 from app.routes.ChatMessage import delete_chat_message
 from app.routes.LiveStatistics import create_LiveStatistics , update_total_duration
 from app.routes.liveBanned import get_banned_me_list
 from app.routes.Notification import batch_write_notifications, get_unread_notifications
 from app.methods.recommend import recommend_lives
-import json
-import queue
-import threading
-import time
+from app.routes.liveModerator import check_moderator
+import random
 
 
 socketio = SocketIO()
@@ -195,6 +194,7 @@ def get_live_list():
 
     banned_me_list = get_banned_me_list(user.id)
     lives = Live.query.filter_by(status='live').all()
+
     data = []
 
     # 遍历所有直播间，生成未排序的 data 列表
@@ -282,3 +282,344 @@ def get_unread_notifications_api():
 
     return jsonify({'message': '获取成功', 'data': notifications})
 
+
+
+#检查进入直播间用户的权限""
+def check_live_permission(user_id, live_id):
+    """
+    检查用户的权限
+
+    参数:
+    - user_id (int): 用户的ID
+    - live_id (int): 直播间的ID
+
+    返回值:
+    - number ,数字1代表普通用户，数字2代表房管，数字3代表主播
+    """
+
+    #先检查进入者是不是主播，如果是主播，直接返回3
+    live = Live.query.filter_by(id=live_id).first()
+    if live.user_id == user_id:
+        return 3
+
+    #检查用户是否是房管
+    if check_moderator(user_id, live.user_id)[0]:
+        return 2
+
+    #如果不是房管也不是主播，则返回1
+    return 1
+
+
+@livehome_bp.route('/check_live_permission',methods=['POST'])
+def check_live_permission_api():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    user_id = user.id
+    live_id = request.json.get('live_id')
+
+    permission = check_live_permission(user_id, live_id)
+    return jsonify({'message': '权限检查成功', 'permission': permission})
+
+
+#搜索功能
+@livehome_bp.route('/search', methods=['GET'])
+def search_lives():
+    query = request.args.get('q', '')
+    if not query:
+        return jsonify({'message': '请输入搜索内容'}), 400
+
+    # 使用join来连接User表
+    results = Live.query.join(Live.user).filter(
+        Live.status == 'live',
+        db.or_(
+            Live.title.ilike(f"%{query}%"),
+            User.name.ilike(f"%{query}%")
+        )
+    ).all()
+
+    lives = []
+    # 确保用户已登录再获取banned_me_list
+    user = get_user_from_token()
+    if not user:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+
+    banned_me_list = get_banned_me_list(user.id)
+
+    for live in results:
+        if live.user.id in banned_me_list:
+            continue
+
+        user_name = live.user.name
+        user_avatar = live.user.avatar_url
+
+        # 假设每个直播只有一个标签，获取第一个标签
+        tag = live.tags[0] if live.tags else None
+        tag_name = tag.name if tag else None
+
+        lives.append({
+            'id': live.id,
+            'title': live.title,
+            'tags': tag_name,
+            'thumbnail': live.cover_url,
+            'streamer': user_name
+        })
+
+    # 注意：这个return应该在for循环外面，否则只会返回第一个结果
+    return jsonify({'message': '搜索结果获取成功', 'data': lives})
+
+
+#搜索自动补全框接口
+@livehome_bp.route('/search_autocomplete',methods=['GET'])
+def search_autocomplete():
+    query = request.args.get('q','')
+    if len(query)<2:
+        return jsonify({'suggestions': []})
+
+    #查询直播标题
+    title_results = db.session.query(Live.title).filter(
+       Live.status == 'live',
+       Live.title.ilike(f"%{query}%")
+    ).limit(5).all()
+    #查询用户名称(title_results)
+    username_results = db.session.query(User.name).join(Live).filter(
+        Live.status == 'live',
+        User.name.ilike(f"%{query}%")
+    ).limit(5).all()
+
+
+#合并结果并去重
+    suggesstions = []
+    for title in title_results:
+        suggesstions.append(title[0])
+    for username in username_results:
+        suggesstions.append(username[0])
+
+    return jsonify({'suggestions': list(set(suggesstions))})
+
+
+
+#红包相关的接口
+
+#判断当前直播间是否已经存在红包活动了
+def rp_is_expired(live_id):
+    RP = RedPacket.query.filter_by(room_id=live_id,status='ongoing').first()
+    # #并且检查红包的开奖时间是不是已经过了
+    # print(RP.expire_time)
+    # print(datetime.datetime.now())
+    # print(RP.expire_time < datetime.datetime.now())
+    if RP:
+        if RP.expire_time > datetime.datetime.now():
+            return True
+        else:
+            return False
+    else:
+        return False
+
+#根据红包id返回红包信息
+def get_redpacket(redpacket_id):
+    red_packet = RedPacket.query.filter_by(id=redpacket_id).first()
+    if not red_packet:
+        return None
+    else:
+       #  red_packet_info = {
+       #      'id':red_packet.id,
+       #      'title':red_packet.title,
+       #      "amount":red_packet.amount,
+       #      "winner_num":red_packet.winner_num,
+       #      "expire_time":red_packet.expire_time,
+       #      "status":red_packet.status
+       # }
+       #  print(f"packet_info:{red_packet_info}")
+        return  red_packet
+#检查直播间是否有红包，如果有，返回红包信息,和用户的参与情况
+def check_red_packet(live_id, user_id):
+    # 获取所有进行中的红包
+    red_packets = RedPacket.query.filter_by(room_id=live_id, status='ongoing').all()
+
+    # 查找未过期的红包
+    red_packet = None
+    for rp in red_packets:
+        if rp.expire_time > datetime.datetime.now():
+            red_packet = rp
+            break
+
+    if not red_packet:
+        return None
+
+    # 检查用户是否有参与过抢红包的活动
+    red_packet_participant = RedPacketParticipant.query.filter_by(
+        redpacket_id=red_packet.id,
+        user_id=user_id
+    ).first()
+
+    red_packet_info = {
+        'id': red_packet.id,
+        'title': red_packet.title,
+        "amount": red_packet.amount,
+        "winner_num": red_packet.winner_num,
+        "expire_time": red_packet.expire_time,
+        'has_join': red_packet_participant is not None,
+    }
+
+    return red_packet_info
+
+
+#用户参与红包活动
+def join_red_packet(red_packet_id, user_id):
+    #检查红包是否存在
+    print(red_packet_id)
+    red_packet = RedPacket.query.filter_by(id=red_packet_id,status='ongoing').first()
+    if not red_packet:
+        return False , '红包不存在或已结束'
+    #检查用户是否已经参与过红包活动
+    red_packet_participant = RedPacketParticipant.query.filter_by(redpacket_id=red_packet_id,user_id=user_id).first()
+
+    if red_packet_participant:
+        return False , '您已经参与过该活动'
+    #如果用户没参与过，就创建一条红包参与记录
+    red_packet_participant = RedPacketParticipant(redpacket_id=red_packet_id,user_id=user_id,participate_time=datetime.datetime.now())
+    db.session.add(red_packet_participant)
+    db.session.commit()
+    return True , '参与成功'
+
+
+from sqlalchemy.exc import SQLAlchemyError
+
+
+#更新·红包·中奖者的余额和交易记录
+def update_winner_balance(red_packet, red_packet_participants, score):
+    try:
+        # 移除了 db.session.begin()，由外层函数管理事务
+
+        for participant in red_packet_participants:
+            participant.is_winner = True
+            participant.award_amount = score
+
+            wallet = Wallet.query.filter_by(user_id=participant.user_id).with_for_update().first()
+            wallet.balance += score
+
+            transaction = Transaction(
+                user_id=participant.user_id,
+                transaction_type='红包',
+                amount=score,
+                reference_id=red_packet.id,
+                description='红包活动',
+                balance_after=wallet.balance,
+                created_at=datetime.datetime.now()
+            )
+            db.session.add(transaction)
+
+        red_packet.status = 'finished'
+        return [participant.user.name for participant in red_packet_participants]
+
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Error updating winner balance: {str(e)}")
+        raise
+
+
+#分配红包函数
+def allocate_red_packet(red_packet_id):
+    try:
+        # 移除了 db.session.begin()，由外层函数管理事务
+
+        red_packet = RedPacket.query.filter_by(id=red_packet_id).with_for_update().first()
+        if not red_packet:
+            print("红包不存在")
+            return []
+
+        red_packet_participants = RedPacketParticipant.query.filter_by(
+            redpacket_id=red_packet_id
+        ).all()
+
+        winner_num = red_packet.winner_num
+
+        if not red_packet_participants:
+            print("没有人参与过红包活动")
+            return []
+
+        if len(red_packet_participants) <= winner_num:
+            score = red_packet.amount / len(red_packet_participants)
+        else:
+            red_packet_participants = random.sample(red_packet_participants, winner_num)
+            score = red_packet.amount / winner_num
+
+        return update_winner_balance(red_packet, red_packet_participants, score)
+
+    except SQLAlchemyError as e:
+        current_app.logger.error(f"Error allocating red packet: {str(e)}")
+        raise
+
+
+@livehome_bp.route('/rp_is_expired',methods=['GET'])
+def rp_is_expired_api():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    live_id = request.args.get('live_id')
+    result = rp_is_expired(live_id)
+    if result:
+        return jsonify({'message': '红包存在，请等待红包活动结束才能继续发送','status':True})
+    else:
+        return jsonify({'message': '当前直播间没有红包活动','status':False})
+
+@livehome_bp.route('/join_red_packet',methods=['POST'])
+def join_red_packet_api():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    data = request.get_json()
+    red_packet_id = data.get('red_packet_id')
+    result, message = join_red_packet(red_packet_id, user.id)
+    if result:
+        return jsonify({'message': message}) , 200
+    else:
+        return jsonify({'message': message}), 400    # 参与失败，返回400状态码
+
+@livehome_bp.route('/check_red_packet',methods=['GET'])
+def check_red_packet_api():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    live_id = request.args.get('live_id')
+    red_packet_info = check_red_packet(live_id, user.id)
+    if red_packet_info:
+        return jsonify({'message': '红包信息获取成功', 'data': red_packet_info})
+    else:
+        return jsonify({'message': '当前直播间没有红包',"data":None})
+
+
+def get_redpacket_result(red_packet_id):
+    red_packet = RedPacket.query.filter_by(id=red_packet_id).first()
+    if not red_packet:
+        return None
+    else:
+        red_packet_participants = RedPacketParticipant.query.filter_by(
+            redpacket_id=red_packet_id,
+            is_winner=True
+        ).all()
+        return [participant.user.name for participant in red_packet_participants]    # 返回中奖者的用户名列表
+@livehome_bp.route('/get_redpacket_result',methods=['GET'])
+def get_redpacket_result_api():
+    print("----有被调用------")
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    red_packet_id = request.args.get('red_packet_id')
+    winner_names = get_redpacket_result(red_packet_id)
+    if winner_names:
+        return jsonify({'message': '红包结果获取成功', 'data': winner_names}),200
+    else:
+        return jsonify({'message': '红包不存在或已结束',"data":None}),400
+
+
+@livehome_bp.route('/get_live_id_by_mine',methods=['GET'])
+def get_live_id_by_mine():
+    user = get_user_from_token()
+    if user is None:
+        return jsonify({'message': '未登录或登录已过期'}), 401
+    live_list = Live.query.filter_by(user_id=user.id).first()
+    if live_list:
+        return jsonify({'message': '获取成功', 'data': live_list.id}),200
+    else:
+        return jsonify({'message': '当前用户没有直播间',"data":None}),400
